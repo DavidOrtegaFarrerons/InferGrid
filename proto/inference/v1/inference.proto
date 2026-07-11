@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package inference.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/DavidOrtegaFarrerons/infergrid/proto/inference/v1;inferencev1";
+
+service InferenceService {
+  rpc SubmitJob(SubmitJobRequest) returns (SubmitJobResponse) {}
+  rpc GetJob(GetJobRequest) returns (GetJobResponse) {}
+}
+
+message SubmitJobRequest {
+  string prompt = 1;
+}
+
+message SubmitJobResponse {
+  string job_id = 1;
+}
+
+message GetJobRequest {
+  string job_id = 1;
+}
+
+message GetJobResponse {
+  Job job = 1;
+}
+
+message Job {
+  string id = 1;
+  string prompt = 2;
+  JobStatus status = 3;
+  optional string result = 4;
+  optional string failure_reason = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+enum JobStatus {
+  JOB_STATUS_UNSPECIFIED = 0;
+  JOB_STATUS_PENDING = 1;
+  JOB_STATUS_RUNNING = 2;
+  JOB_STATUS_SUCCEEDED = 3;
+  JOB_STATUS_FAILED = 4;
+}
