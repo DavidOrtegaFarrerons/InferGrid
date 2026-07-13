@@ -15,8 +15,8 @@ type GetJobService struct {
 	jobReader JobReader
 }
 
-func NewGetJobService(jobReader JobReader) GetJobService {
-	return GetJobService{jobReader: jobReader}
+func NewGetJobService(jobReader JobReader) *GetJobService {
+	return &GetJobService{jobReader: jobReader}
 }
 
 type GetJobRequest struct {

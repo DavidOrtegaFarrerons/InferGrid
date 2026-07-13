@@ -2,18 +2,17 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"net"
-	"os"
-	"time"
 
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/application"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/id"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/postgres"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/postgres/migrations"
+	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/rabbitmq"
 	grpctransport "github.com/DavidOrtegaFarrerons/infergrid/internal/transport/grpc"
 	inferencev1 "github.com/DavidOrtegaFarrerons/infergrid/proto/inference/v1"
+	amqp "github.com/rabbitmq/amqp091-go"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"google.golang.org/grpc"
@@ -22,36 +21,37 @@ import (
 func main() {
 
 	databaseDSN := "postgres://infergrid:infergrid@localhost:5432/infergrid?sslmode=disable"
-
-	migrationsPath := os.Getenv("BILLING_MIGRATIONS_PATH")
-	if migrationsPath == "" {
-		migrationsPath = "file://internal/infrastructure/postgres/migrations"
-	}
-
-	err := migrations.Run(databaseDSN, migrationsPath)
+	db, err := postgres.Open(context.Background(), databaseDSN)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("error when connecting to db: %v", err)
 	}
-
-	db, err := sql.Open("pgx", databaseDSN)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	err = db.PingContext(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	defer db.Close()
+
 	log.Println("Connection to DB established")
+
+	migrationsPath := "file://internal/infrastructure/postgres/migrations"
+	err = migrations.Run(databaseDSN, migrationsPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	mqconn, err := amqp.Dial("amqp://infergrid:infergrid@localhost:5672/")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	jobQueue, err := rabbitmq.NewJobQueue(mqconn)
+	if err != nil {
+		log.Fatalf("Job queue setup failed, %v", err)
+	}
 
 	jobIdGenerator := id.NewUuidJobIdGenerator()
 	jobRepository := postgres.NewJobRepository(db)
-	submitJobService := application.NewSubmitJobService(jobIdGenerator, jobRepository)
+	submitJobService := application.NewSubmitJobService(
+		jobIdGenerator,
+		jobRepository,
+		jobQueue,
+	)
 	getJobService := application.NewGetJobService(jobRepository)
 	inferenceGRPCServer := grpctransport.NewGRPCInferenceServiceServer(submitJobService, getJobService)
 	grpcServer := grpc.NewServer()
@@ -64,7 +64,7 @@ func main() {
 
 	log.Println("Inference gRPC server running on :9091")
 
-	if err := grpcServer.Serve(grpcListener); err != nil {
+	if err = grpcServer.Serve(grpcListener); err != nil {
 		log.Fatalf("gRPC server failed: %s", err)
 	}
 }

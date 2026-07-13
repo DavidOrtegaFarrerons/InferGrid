@@ -73,8 +73,35 @@ func (r JobRepository) GetByID(ctx context.Context, id job.ID) (*job.Job, error)
 	return inferenceJob.toDomain(), nil
 }
 
-func (r JobRepository) Update(ctx context.Context, job *job.Job) error {
-	panic("implement me")
+func (r JobRepository) Update(ctx context.Context, inferenceJob *job.Job) error {
+	query := `UPDATE jobs SET status = $1, result = $2, failure_reason = $3, updated_at = $4 WHERE id = $5`
+
+	jobResult, hasJobResult := inferenceJob.Result()
+	failureReason, hasFailureReason := inferenceJob.FailureReason()
+
+	result := sql.NullString{String: jobResult, Valid: hasJobResult}
+	failure := sql.NullString{String: failureReason, Valid: hasFailureReason}
+	queryResult, err := r.db.ExecContext(ctx, query,
+		inferenceJob.Status(),
+		result,
+		failure,
+		inferenceJob.UpdatedAt(),
+		inferenceJob.ID(),
+	)
+
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := queryResult.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return application.ErrJobNotFound
+	}
+	return err
 }
 
 func NewJobRepository(db *sql.DB) JobRepository {

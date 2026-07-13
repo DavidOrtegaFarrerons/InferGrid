@@ -10,15 +10,18 @@ import (
 type SubmitJobService struct {
 	jobIDGenerator JobIDGenerator
 	jobRepository  JobRepository
+	jobQueue       JobQueue
 }
 
 func NewSubmitJobService(
 	jobIDGenerator JobIDGenerator,
 	jobRepository JobRepository,
-) SubmitJobService {
-	return SubmitJobService{
+	jobQueue JobQueue,
+) *SubmitJobService {
+	return &SubmitJobService{
 		jobIDGenerator: jobIDGenerator,
 		jobRepository:  jobRepository,
+		jobQueue:       jobQueue,
 	}
 }
 
@@ -44,6 +47,10 @@ func (s *SubmitJobService) Execute(
 
 	if err = s.jobRepository.Create(ctx, inferenceJob); err != nil {
 		log.Printf("failed to submit job: %v \n", err)
+	}
+
+	if err = s.jobQueue.Enqueue(ctx, inferenceJob.ID()); err != nil {
+		log.Printf("failed to enqueue job %v \n", err)
 	}
 
 	return SubmitJobResponse{
