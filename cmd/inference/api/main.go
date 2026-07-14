@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/application"
+	"github.com/DavidOrtegaFarrerons/infergrid/internal/config"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/id"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/postgres"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/postgres/migrations"
@@ -20,8 +21,12 @@ import (
 
 func main() {
 
-	databaseDSN := "postgres://infergrid:infergrid@localhost:5432/infergrid?sslmode=disable"
-	db, err := postgres.Open(context.Background(), databaseDSN)
+	cfg, err := config.LoadAPI()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db, err := postgres.Open(context.Background(), cfg.Database.DSN)
 	if err != nil {
 		log.Fatalf("error when connecting to db: %v", err)
 	}
@@ -29,13 +34,12 @@ func main() {
 
 	log.Println("Connection to DB established")
 
-	migrationsPath := "file://internal/infrastructure/postgres/migrations"
-	err = migrations.Run(databaseDSN, migrationsPath)
+	err = migrations.Run(cfg.Database.DSN, cfg.Database.MigrationsPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	mqconn, err := amqp.Dial("amqp://infergrid:infergrid@localhost:5672/")
+	mqconn, err := amqp.Dial(cfg.RabbitMQ.AMQPURL)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -57,12 +61,12 @@ func main() {
 	grpcServer := grpc.NewServer()
 	inferencev1.RegisterInferenceServiceServer(grpcServer, inferenceGRPCServer)
 
-	grpcListener, err := net.Listen("tcp", ":9091")
+	grpcListener, err := net.Listen("tcp", cfg.Server.ListenAddress)
 	if err != nil {
 		log.Fatalf("failed to listen: %s", err)
 	}
 
-	log.Println("Inference gRPC server running on :9091")
+	log.Printf("Inference gRPC server running on %s \n", cfg.Server.ListenAddress)
 
 	if err = grpcServer.Serve(grpcListener); err != nil {
 		log.Fatalf("gRPC server failed: %s", err)

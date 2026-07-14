@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/application"
+	"github.com/DavidOrtegaFarrerons/infergrid/internal/config"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/ollama"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/postgres"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/rabbitmq"
@@ -14,15 +15,19 @@ import (
 )
 
 func main() {
-	databaseDSN := "postgres://infergrid:infergrid@localhost:5432/infergrid?sslmode=disable"
-	db, err := postgres.Open(context.Background(), databaseDSN)
+	cfg, err := config.LoadWorker()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	db, err := postgres.Open(context.Background(), cfg.Database.DSN)
 	if err != nil {
 		log.Fatalf("Error when connecting to database: %v", err)
 	}
 
 	defer db.Close()
 
-	mqconn, err := amqp.Dial("amqp://infergrid:infergrid@localhost:5672/")
+	mqconn, err := amqp.Dial(cfg.RabbitMQ.AMQPURL)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -32,8 +37,8 @@ func main() {
 	inferenceRunner := ollama.NewInferenceRunner(
 		ollama.NewClient(
 			http.DefaultClient,
-			"http://localhost:11434",
-			"llama3.2:1b",
+			cfg.Ollama.BaseURL,
+			cfg.Ollama.Model,
 		),
 	)
 	processJobService := application.NewProcessJobService(jobRepository, inferenceRunner)

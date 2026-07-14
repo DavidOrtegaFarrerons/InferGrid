@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/DavidOrtegaFarrerons/infergrid/internal/config"
 	inferencev1 "github.com/DavidOrtegaFarrerons/infergrid/proto/inference/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -24,8 +26,13 @@ func run() error {
 		return usageError()
 	}
 
+	cfg, err := config.LoadClient()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	conn, err := grpc.NewClient(
-		"localhost:9091",
+		cfg.Server.ListenAddress,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
