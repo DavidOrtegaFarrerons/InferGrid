@@ -22,7 +22,7 @@ type Client struct {
 	client    *http.Client
 	serverUrl string
 	model     string
-	apiKey string
+	apiKey    string
 }
 
 func NewClient(client *http.Client, serverUrl string, model string, apiKey string) *Client {
@@ -30,7 +30,7 @@ func NewClient(client *http.Client, serverUrl string, model string, apiKey strin
 		client:    client,
 		serverUrl: serverUrl,
 		model:     model,
-		apiKey: apiKey,
+		apiKey:    apiKey,
 	}
 }
 

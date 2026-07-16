@@ -22,7 +22,7 @@ type GRPCServerConfig struct {
 type InferenceProvider string
 
 const (
-	ProviderOllama InferenceProvider = "ollama"
+	ProviderOllama           InferenceProvider = "ollama"
 	ProviderOpenAICompatible InferenceProvider = "openai-compatible"
 )
 
@@ -33,8 +33,8 @@ type OllamaConfig struct {
 
 type OpenAICompatibleConfig struct {
 	BaseURL string
-	Model string
-	APIKey string
+	Model   string
+	APIKey  string
 }
 
 type APIConfig struct {
@@ -44,11 +44,11 @@ type APIConfig struct {
 }
 
 type WorkerConfig struct {
-	Database DatabaseConfig
-	RabbitMQ RabbitMQConfig
-	Server   GRPCServerConfig
-	Provider InferenceProvider
-	Ollama   OllamaConfig
+	Database         DatabaseConfig
+	RabbitMQ         RabbitMQConfig
+	Server           GRPCServerConfig
+	Provider         InferenceProvider
+	Ollama           OllamaConfig
 	OpenAICompatible OpenAICompatibleConfig
 }
 
@@ -209,7 +209,7 @@ func LoadWorker() (WorkerConfig, error) {
 	case ProviderOllama:
 		cfg.Ollama, err = loadOllama()
 	case ProviderOpenAICompatible:
-		cfg.OpenAICompatible,  err = loadOpenAICompatible()
+		cfg.OpenAICompatible, err = loadOpenAICompatible()
 	}
 	if err != nil {
 		return WorkerConfig{}, fmt.Errorf("loading %s config: %w", provider, err)

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+unformatted=$(gofmt -l .)
+if [ -n "$unformatted" ]; then
+    echo "Formatting with gofmt:"
+    echo "$unformatted"
+    gofmt -w $unformatted
+    git add $unformatted
+fi
+
+just test

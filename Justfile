@@ -17,11 +17,13 @@ help:
         "just worker" "Run the worker" \
         "just client" "Run the client" \
         "just dev" "Run API and worker together" \
+        "just test" "Run tests" \
         "just check" "Run tests, vet and build"
 
 setup:
     test -f .env || cp .env.example .env
     go mod download
+    git config core.hooksPath .githooks
     docker compose up -d
 
 infrastructure:
@@ -57,6 +59,9 @@ dev: check-api-env check-worker-env
     go run {{worker_cmd}} & worker_pid=$!
     trap 'kill $api_pid $worker_pid 2>/dev/null || true' EXIT INT TERM
     wait
+
+test:
+    go test ./...
 
 check:
     go test ./...
