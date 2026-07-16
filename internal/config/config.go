@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 )
 
@@ -18,9 +19,22 @@ type GRPCServerConfig struct {
 	ListenAddress string
 }
 
+type InferenceProvider string
+
+const (
+	ProviderOllama InferenceProvider = "ollama"
+	ProviderOpenAICompatible InferenceProvider = "openai-compatible"
+)
+
 type OllamaConfig struct {
 	BaseURL string
 	Model   string
+}
+
+type OpenAICompatibleConfig struct {
+	BaseURL string
+	Model string
+	APIKey string
 }
 
 type APIConfig struct {
@@ -33,7 +47,9 @@ type WorkerConfig struct {
 	Database DatabaseConfig
 	RabbitMQ RabbitMQConfig
 	Server   GRPCServerConfig
+	Provider InferenceProvider
 	Ollama   OllamaConfig
+	OpenAICompatible OpenAICompatibleConfig
 }
 
 type ClientConfig struct {
@@ -84,6 +100,20 @@ func loadGRPCServer() (GRPCServerConfig, error) {
 	return GRPCServerConfig{ListenAddress: listenAddress}, nil
 }
 
+func loadInferenceProvider() (InferenceProvider, error) {
+	inferenceProvider, err := requiredEnv("INFERENCE_PROVIDER")
+	if err != nil {
+		return "", err
+	}
+
+	switch InferenceProvider(inferenceProvider) {
+	case ProviderOllama, ProviderOpenAICompatible:
+		return InferenceProvider(inferenceProvider), nil
+	default:
+		return "", fmt.Errorf("unknown INFERENCE_PROVIDER: %s", inferenceProvider)
+	}
+}
+
 func loadOllama() (OllamaConfig, error) {
 	url, err := requiredEnv("OLLAMA_URL")
 	if err != nil {
@@ -98,6 +128,29 @@ func loadOllama() (OllamaConfig, error) {
 	return OllamaConfig{
 		BaseURL: url,
 		Model:   model,
+	}, nil
+}
+
+func loadOpenAICompatible() (OpenAICompatibleConfig, error) {
+	url, err := requiredEnv("OPENAI_COMPATIBLE_URL")
+	if err != nil {
+		return OpenAICompatibleConfig{}, err
+	}
+
+	model, err := requiredEnv("OPENAI_COMPATIBLE_MODEL")
+	if err != nil {
+		return OpenAICompatibleConfig{}, err
+	}
+
+	apiKey := os.Getenv("OPENAI_COMPATIBLE_API_KEY")
+	if apiKey == "" {
+		log.Println("No OPENAI_COMPATIBLE_API_KEY provided")
+	}
+
+	return OpenAICompatibleConfig{
+		BaseURL: url,
+		Model:   model,
+		APIKey:  apiKey,
 	}, nil
 }
 
@@ -140,17 +193,30 @@ func LoadWorker() (WorkerConfig, error) {
 		return WorkerConfig{}, fmt.Errorf("loading server: %w", err)
 	}
 
-	ollama, err := loadOllama()
+	provider, err := loadInferenceProvider()
 	if err != nil {
-		return WorkerConfig{}, fmt.Errorf("loading ollama: %w", err)
+		return WorkerConfig{}, fmt.Errorf("loading inference provider: %w", err)
 	}
 
-	return WorkerConfig{
+	cfg := WorkerConfig{
 		Database: database,
 		RabbitMQ: rabbitMQ,
 		Server:   server,
-		Ollama:   ollama,
-	}, nil
+		Provider: provider,
+	}
+
+	switch provider {
+	case ProviderOllama:
+		cfg.Ollama, err = loadOllama()
+	case ProviderOpenAICompatible:
+		cfg.OpenAICompatible,  err = loadOpenAICompatible()
+	}
+	if err != nil {
+		return WorkerConfig{}, fmt.Errorf("loading %s config: %w", provider, err)
+	}
+
+	return cfg, nil
+
 }
 
 func LoadClient() (ClientConfig, error) {

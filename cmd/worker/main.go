@@ -8,6 +8,7 @@ import (
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/application"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/config"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/ollama"
+	openaicompatible "github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/openai-compatible"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/postgres"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/rabbitmq"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -34,13 +35,30 @@ func main() {
 
 	jobRepository := postgres.NewJobRepository(db)
 
-	inferenceRunner := ollama.NewInferenceRunner(
-		ollama.NewClient(
-			http.DefaultClient,
-			cfg.Ollama.BaseURL,
-			cfg.Ollama.Model,
-		),
-	)
+	var inferenceRunner application.InferenceRunner
+
+	switch cfg.Provider {
+	case config.ProviderOllama:
+		inferenceRunner = ollama.NewInferenceRunner(
+			ollama.NewClient(
+				http.DefaultClient,
+				cfg.Ollama.BaseURL,
+				cfg.Ollama.Model,
+			),
+		)
+	case config.ProviderOpenAICompatible:
+		inferenceRunner = openaicompatible.NewInferenceRunner(
+			openaicompatible.NewClient(
+				http.DefaultClient,
+				cfg.OpenAICompatible.BaseURL,
+				cfg.OpenAICompatible.Model,
+				cfg.OpenAICompatible.APIKey,
+			),
+		)
+	default:
+		log.Fatalf("unknown inference provider: %s", cfg.Provider)
+	}
+
 	processJobService := application.NewProcessJobService(jobRepository, inferenceRunner)
 	jobQueue, err := rabbitmq.NewJobConsumer(mqconn, processJobService)
 	if err != nil {
