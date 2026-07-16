@@ -1,8 +1,8 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-API_CMD ?= ./cmd/inference/api
-WORKER_CMD ?= ./cmd/inference/worker
+API_CMD ?= ./cmd/api
+WORKER_CMD ?= ./cmd/worker
 CLIENT_CMD ?= ./cmd/client
 
 ifneq (,$(wildcard .env))
