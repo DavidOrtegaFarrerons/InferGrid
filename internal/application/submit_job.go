@@ -2,7 +2,7 @@ package application
 
 import (
 	"context"
-	"log"
+	"fmt"
 
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/domain/job"
 )
@@ -46,11 +46,11 @@ func (s *SubmitJobService) Execute(
 	}
 
 	if err = s.jobRepository.Create(ctx, inferenceJob); err != nil {
-		log.Printf("failed to submit job: %v \n", err)
+		return SubmitJobResponse{}, fmt.Errorf("failed to submit job: %w", err)
 	}
 
 	if err = s.jobQueue.Enqueue(ctx, inferenceJob.ID()); err != nil {
-		log.Printf("failed to enqueue job %v \n", err)
+		return SubmitJobResponse{}, fmt.Errorf("failed to enqueue job: %w", err)
 	}
 
 	return SubmitJobResponse{
