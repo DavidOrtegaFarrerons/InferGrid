@@ -79,7 +79,7 @@ func (c *Client) Generate(ctx context.Context, prompt string) (string, error) {
 
 	defer resp.Body.Close()
 
-	if resp.StatusCode > http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 		return "", fmt.Errorf(
 			"ollama returned %s: %s",

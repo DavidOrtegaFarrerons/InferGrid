@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/domain/job"
@@ -70,6 +71,9 @@ func (s ProcessJobService) Execute(ctx context.Context, request ProcessJobReques
 	)
 
 	if err != nil {
+		if errors.Is(err, ErrInferenceUnavailable) {
+			return fmt.Errorf("inference unavailable: %w", err)
+		}
 		if failErr := inferenceJob.Fail(err.Error()); failErr != nil {
 			return fmt.Errorf("fail job: %w", failErr)
 		}

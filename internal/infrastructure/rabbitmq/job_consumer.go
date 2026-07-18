@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
+	"time"
 
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/application"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/domain/job"
@@ -81,7 +83,9 @@ func (c *JobConsumer) Run(ctx context.Context) error {
 				return fmt.Errorf("requeue job message: %w", nackErr)
 			}
 
-			return fmt.Errorf("process job: %w", processErr)
+			log.Printf("job %s requeued: %v", message.JobID, processErr)
+			time.Sleep(time.Second) //Will be a dead letter queue in the future, but works to test the Circuit Breaker
+			continue
 		}
 
 		if ackErr := delivery.Ack(false); ackErr != nil {

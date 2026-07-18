@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/application"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/config"
@@ -11,6 +12,7 @@ import (
 	openaicompatible "github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/openai-compatible"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/postgres"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/rabbitmq"
+	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/resilience"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -58,6 +60,14 @@ func main() {
 	default:
 		log.Fatalf("unknown inference provider: %s", cfg.Provider)
 	}
+
+	inferenceRunner = resilience.NewCircuitBreakerRunner(
+		inferenceRunner,
+		resilience.NewCircuitBreaker(
+			5,
+			30*time.Second,
+		),
+	)
 
 	processJobService := application.NewProcessJobService(jobRepository, inferenceRunner)
 	jobQueue, err := rabbitmq.NewJobConsumer(mqconn, processJobService)
