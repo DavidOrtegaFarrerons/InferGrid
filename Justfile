@@ -19,7 +19,8 @@ help:
         "just relay" "Run the outbox relay" \
         "just client" "Run the client" \
         "just dev" "Run API, relay and worker together" \
-        "just test" "Run tests" \
+        "just test" "Run unit tests" \
+        "just test-integration" "Run unit and integration tests (needs Docker)" \
         "just check" "Run tests, vet and build"
 
 setup:
@@ -68,6 +69,9 @@ dev: check-api-env check-relay-env check-worker-env
 
 test:
     go test ./...
+
+test-integration:
+    go test -tags integration ./...
 
 check:
     go test ./...
