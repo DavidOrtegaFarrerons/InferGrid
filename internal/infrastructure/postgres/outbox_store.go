@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"time"
 )
 
 type OutboxStore struct {
@@ -75,4 +76,14 @@ func (s OutboxStore) MarkPublished(ctx context.Context, id int64) error {
 
 	_, err := s.db.ExecContext(ctx, query, id)
 	return err
+}
+
+func (s OutboxStore) DeletePublishedBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	query := `DELETE FROM outbox WHERE published_at IS NOT NULL AND published_at < $1`
+	res, err := s.db.ExecContext(ctx, query, cutoff)
+	if err != nil {
+		return 0, err
+	}
+
+	return res.RowsAffected()
 }

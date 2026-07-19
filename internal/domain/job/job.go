@@ -26,7 +26,7 @@ func New(id ID, prompt string) (*Job, error) {
 		return nil, ErrEmptyPrompt
 	}
 
-	now := time.Now().UTC()
+	now := time.Now().Truncate(time.Microsecond).UTC()
 
 	return &Job{
 		id:        id,
