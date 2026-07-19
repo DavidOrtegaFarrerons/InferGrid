@@ -3,12 +3,14 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"log"
 	"time"
 
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/application"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/domain/job"
+	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/messaging"
 )
 
 type jobRow struct {
@@ -44,7 +46,15 @@ func (r jobRow) toDomain() *job.Job {
 }
 
 type JobRepository struct {
-	db *sql.DB
+	db          *sql.DB
+	outboxStore OutboxStore
+}
+
+func NewJobRepository(db *sql.DB, outboxStore OutboxStore) JobRepository {
+	return JobRepository{
+		db:          db,
+		outboxStore: outboxStore,
+	}
 }
 
 func (r JobRepository) GetByID(ctx context.Context, id job.ID) (*job.Job, error) {
@@ -104,15 +114,24 @@ func (r JobRepository) Update(ctx context.Context, inferenceJob *job.Job) error 
 	return err
 }
 
-func NewJobRepository(db *sql.DB) JobRepository {
-	return JobRepository{db: db}
-}
-
 func (r JobRepository) Create(
 	ctx context.Context,
 	inferenceJob *job.Job,
 ) error {
-	log.Printf("Create called for job %s", inferenceJob.ID())
+	payload, err := json.Marshal(messaging.JobMessage{
+		JobID: string(inferenceJob.ID()),
+	})
+
+	if err != nil {
+		return err
+	}
+
+	event := outboxEvent{
+		aggregateType: "job",
+		aggregateID:   string(inferenceJob.ID()),
+		eventType:     "job.created",
+		payload:       payload,
+	}
 
 	query := `
 		INSERT INTO jobs (
@@ -125,7 +144,14 @@ func (r JobRepository) Create(
 		VALUES ($1, $2, $3, $4, $5)
 	`
 
-	_, err := r.db.ExecContext(
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(
 		ctx,
 		query,
 		string(inferenceJob.ID()),
@@ -134,10 +160,16 @@ func (r JobRepository) Create(
 		inferenceJob.CreatedAt(),
 		inferenceJob.UpdatedAt(),
 	)
+
 	if err != nil {
 		log.Printf("Create failed for job %s: %v", inferenceJob.ID(), err)
 		return err
 	}
 
-	return nil
+	err = r.outboxStore.insertOutboxEvent(ctx, tx, event)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }

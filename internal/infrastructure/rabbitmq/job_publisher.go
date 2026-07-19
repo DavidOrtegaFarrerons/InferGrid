@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/DavidOrtegaFarrerons/infergrid/internal/domain/job"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -15,17 +14,13 @@ var errPublishNotConfirmed = errors.New(
 	"job message was not confirmed by RabbitMQ",
 )
 
-type JobQueue struct {
+type JobPublisher struct {
 	channel *amqp.Channel
 }
 
-type JobMessage struct {
-	JobID string `json:"job_id"`
-}
-
-func NewJobQueue(
+func NewJobPublisher(
 	connection *amqp.Connection,
-) (*JobQueue, error) {
+) (*JobPublisher, error) {
 	channel, err := openJobChannel(connection)
 	if err != nil {
 		return nil, err
@@ -36,20 +31,14 @@ func NewJobQueue(
 		return nil, fmt.Errorf("enable publisher confirms: %w", err)
 	}
 
-	return &JobQueue{channel: channel}, nil
+	return &JobPublisher{channel: channel}, nil
 }
 
-func (q *JobQueue) Enqueue(
+func (q *JobPublisher) Publish(
 	ctx context.Context,
-	id job.ID,
+	messageID string,
+	payload json.RawMessage,
 ) error {
-	body, err := json.Marshal(JobMessage{
-		JobID: string(id),
-	})
-	if err != nil {
-		return fmt.Errorf("encode job message: %w", err)
-	}
-
 	confirmation, err := q.channel.PublishWithDeferredConfirmWithContext(
 		ctx,
 		jobExchange,
@@ -59,10 +48,10 @@ func (q *JobQueue) Enqueue(
 		amqp.Publishing{
 			ContentType:  "application/json",
 			DeliveryMode: amqp.Persistent,
-			MessageId:    string(id),
+			MessageId:    messageID,
 			Type:         "job.execute",
 			Timestamp:    time.Now().UTC(),
-			Body:         body,
+			Body:         payload,
 		},
 	)
 	if err != nil {
@@ -84,6 +73,6 @@ func (q *JobQueue) Enqueue(
 	return nil
 }
 
-func (q *JobQueue) Close() error {
+func (q *JobPublisher) Close() error {
 	return q.channel.Close()
 }

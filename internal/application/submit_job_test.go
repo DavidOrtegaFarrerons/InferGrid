@@ -28,24 +28,11 @@ func (f *fakeJobRepository) GetByID(ctx context.Context, id job.ID) (*job.Job, e
 }
 func (f *fakeJobRepository) Update(ctx context.Context, j *job.Job) error { return nil }
 
-type fakeJobQueue struct {
-	enqueuedID job.ID
-	enqueueErr error
-	called     bool
-}
-
-func (f *fakeJobQueue) Enqueue(ctx context.Context, id job.ID) error {
-	f.called = true
-	f.enqueuedID = id
-	return f.enqueueErr
-}
-
 func TestSubmitJobService_Execute(t *testing.T) {
-	t.Run("invalid prompt returns error before persisting or enqueuing", func(t *testing.T) {
+	t.Run("invalid prompt returns error before persisting", func(t *testing.T) {
 		gen := fakeIDGenerator{id: "generated-id"}
 		repo := &fakeJobRepository{}
-		queue := &fakeJobQueue{}
-		svc := NewSubmitJobService(gen, repo, queue)
+		svc := NewSubmitJobService(gen, repo)
 
 		_, err := svc.Execute(context.Background(), SubmitJobRequest{Prompt: "   "})
 		if !errors.Is(err, job.ErrEmptyPrompt) {
@@ -54,16 +41,12 @@ func TestSubmitJobService_Execute(t *testing.T) {
 		if repo.created != nil {
 			t.Errorf("repository.Create should not be called on invalid input")
 		}
-		if queue.called {
-			t.Errorf("queue.Enqueue should not be called on invalid input")
-		}
 	})
 
-	t.Run("happy path creates, enqueues, and returns the generated id", func(t *testing.T) {
+	t.Run("happy path creates and returns the generated id", func(t *testing.T) {
 		gen := fakeIDGenerator{id: "generated-id"}
 		repo := &fakeJobRepository{}
-		queue := &fakeJobQueue{}
-		svc := NewSubmitJobService(gen, repo, queue)
+		svc := NewSubmitJobService(gen, repo)
 
 		resp, err := svc.Execute(context.Background(), SubmitJobRequest{Prompt: "a real prompt"})
 		if err != nil {
@@ -78,35 +61,16 @@ func TestSubmitJobService_Execute(t *testing.T) {
 		if repo.created != nil && repo.created.Prompt() != "a real prompt" {
 			t.Errorf("persisted prompt = %q, want %q", repo.created.Prompt(), "a real prompt")
 		}
-		if queue.enqueuedID != job.ID("generated-id") {
-			t.Errorf("enqueued id = %q, want %q", queue.enqueuedID, "generated-id")
-		}
 	})
 
-	t.Run("repository error is returned and the job is not enqueued", func(t *testing.T) {
+	t.Run("repository error is returned", func(t *testing.T) {
 		gen := fakeIDGenerator{id: "generated-id"}
 		repo := &fakeJobRepository{createErr: errors.New("db down")}
-		queue := &fakeJobQueue{}
-		svc := NewSubmitJobService(gen, repo, queue)
+		svc := NewSubmitJobService(gen, repo)
 
 		_, err := svc.Execute(context.Background(), SubmitJobRequest{Prompt: "a real prompt"})
 		if err == nil {
 			t.Fatal("expected an error when the repository fails")
-		}
-		if queue.called {
-			t.Errorf("queue.Enqueue should not be called after a repository failure")
-		}
-	})
-
-	t.Run("queue error is returned", func(t *testing.T) {
-		gen := fakeIDGenerator{id: "generated-id"}
-		repo := &fakeJobRepository{}
-		queue := &fakeJobQueue{enqueueErr: errors.New("broker down")}
-		svc := NewSubmitJobService(gen, repo, queue)
-
-		_, err := svc.Execute(context.Background(), SubmitJobRequest{Prompt: "a real prompt"})
-		if err == nil {
-			t.Fatal("expected an error when the queue fails")
 		}
 	})
 }

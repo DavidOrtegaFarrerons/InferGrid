@@ -11,6 +11,7 @@ import (
 
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/application"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/domain/job"
+	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/messaging"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -50,7 +51,7 @@ func (c *JobConsumer) Run(ctx context.Context) error {
 	}
 
 	for delivery := range deliveries {
-		var message JobMessage
+		var message messaging.JobMessage
 		if err := json.Unmarshal(delivery.Body, &message); err != nil {
 			if nackErr := delivery.Nack(false, false); nackErr != nil {
 				return fmt.Errorf("reject invalid message: %w", nackErr)

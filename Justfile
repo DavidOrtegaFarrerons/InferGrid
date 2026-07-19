@@ -3,6 +3,7 @@ set dotenv-load := true
 
 api_cmd := env_var_or_default("API_CMD", "./cmd/api")
 worker_cmd := env_var_or_default("WORKER_CMD", "./cmd/worker")
+relay_cmd := env_var_or_default("RELAY_CMD", "./cmd/relay")
 client_cmd := env_var_or_default("CLIENT_CMD", "./cmd/client")
 
 default: help
@@ -15,8 +16,9 @@ help:
         "just logs" "Follow Docker Compose logs" \
         "just api" "Run the API" \
         "just worker" "Run the worker" \
+        "just relay" "Run the outbox relay" \
         "just client" "Run the client" \
-        "just dev" "Run API and worker together" \
+        "just dev" "Run API, relay and worker together" \
         "just test" "Run tests" \
         "just check" "Run tests, vet and build"
 
@@ -41,6 +43,9 @@ api: check-api-env
 worker: check-worker-env
     go run {{worker_cmd}}
 
+relay: check-relay-env
+    go run {{relay_cmd}}
+
 client *ARGS: check-client-env
     go run ./cmd/client {{ARGS}}
 
@@ -52,12 +57,13 @@ get JOB_ID:
     @test -n "{{JOB_ID}}" || (echo "JOB_ID is required"; exit 1)
     go run ./cmd/client get "{{JOB_ID}}"
 
-dev: check-api-env check-worker-env
+dev: check-api-env check-relay-env check-worker-env
     #!/usr/bin/env bash
     set -euo pipefail
     go run {{api_cmd}} & api_pid=$!
+    go run {{relay_cmd}} & relay_pid=$!
     go run {{worker_cmd}} & worker_pid=$!
-    trap 'kill $api_pid $worker_pid 2>/dev/null || true' EXIT INT TERM
+    trap 'kill $api_pid $relay_pid $worker_pid 2>/dev/null || true' EXIT INT TERM
     wait
 
 test:
@@ -78,6 +84,13 @@ check-api-env:
 check-worker-env:
     #!/usr/bin/env bash
     for key in DATABASE_DSN MIGRATIONS_PATH AMQP_URL; do
+        value="${!key}"
+        if [ -z "$value" ]; then echo "$key is required in .env"; exit 1; fi
+    done
+
+check-relay-env:
+    #!/usr/bin/env bash
+    for key in DATABASE_DSN AMQP_URL GRPC_LISTEN_ADDRESS; do
         value="${!key}"
         if [ -z "$value" ]; then echo "$key is required in .env"; exit 1; fi
     done

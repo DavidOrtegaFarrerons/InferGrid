@@ -10,17 +10,13 @@ import (
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/id"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/postgres"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/postgres/migrations"
-	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/rabbitmq"
 	grpctransport "github.com/DavidOrtegaFarrerons/infergrid/internal/transport/grpc"
 	inferencev1 "github.com/DavidOrtegaFarrerons/infergrid/proto/inference/v1"
-	amqp "github.com/rabbitmq/amqp091-go"
-
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"google.golang.org/grpc"
 )
 
 func main() {
-
 	cfg, err := config.LoadAPI()
 	if err != nil {
 		log.Fatal(err)
@@ -39,22 +35,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	mqconn, err := amqp.Dial(cfg.RabbitMQ.AMQPURL)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	jobQueue, err := rabbitmq.NewJobQueue(mqconn)
-	if err != nil {
-		log.Fatalf("Job queue setup failed, %v", err)
-	}
-
 	jobIdGenerator := id.NewUuidJobIdGenerator()
-	jobRepository := postgres.NewJobRepository(db)
+	outboxStore := postgres.NewOutboxStore(db)
+	jobRepository := postgres.NewJobRepository(db, outboxStore)
 	submitJobService := application.NewSubmitJobService(
 		jobIdGenerator,
 		jobRepository,
-		jobQueue,
 	)
 	getJobService := application.NewGetJobService(jobRepository)
 	inferenceGRPCServer := grpctransport.NewGRPCInferenceServiceServer(submitJobService, getJobService)

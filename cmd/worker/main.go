@@ -34,8 +34,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer mqconn.Close()
 
-	jobRepository := postgres.NewJobRepository(db)
+	outboxStore := postgres.NewOutboxStore(db)
+	jobRepository := postgres.NewJobRepository(db, outboxStore)
 
 	var inferenceRunner application.InferenceRunner
 
