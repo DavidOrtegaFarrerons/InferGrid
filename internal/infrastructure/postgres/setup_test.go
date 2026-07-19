@@ -56,3 +56,16 @@ func TestMain(m *testing.M) {
 	pgContainer.Terminate(context.Background())
 	os.Exit(code)
 }
+
+// resetDB returns the shared test database to a clean slate. All integration
+// tests run against the same container and pool (started once in TestMain), so
+// each test must reset state to stay independent of what ran before it. TRUNCATE
+// is used over DELETE because it is faster and resets the outbox's identity
+// sequence, keeping ids predictable across tests. RESTART IDENTITY does that;
+// CASCADE covers any future foreign keys.
+func resetDB(t *testing.T) {
+	t.Helper()
+	if _, err := testDB.Exec(`TRUNCATE jobs, outbox RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatalf("reset db: %v", err)
+	}
+}
