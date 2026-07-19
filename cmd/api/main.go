@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"net"
+	"os/signal"
+	"syscall"
 
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/application"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/config"
@@ -21,6 +23,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// ctx is cancelled on SIGINT/SIGTERM and drives the graceful shutdown below.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	db, err := postgres.Open(context.Background(), cfg.Database.DSN)
 	if err != nil {
@@ -52,9 +58,16 @@ func main() {
 		log.Fatalf("failed to listen: %s", err)
 	}
 
+	go func() {
+		<-ctx.Done()
+		log.Println("shutting down gRPC server...")
+		grpcServer.GracefulStop()
+	}()
+
 	log.Printf("Inference gRPC server running on %s \n", cfg.Server.ListenAddress)
 
 	if err = grpcServer.Serve(grpcListener); err != nil {
 		log.Fatalf("gRPC server failed: %s", err)
 	}
+	log.Println("gRPC server stopped")
 }

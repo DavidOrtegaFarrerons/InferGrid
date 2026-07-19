@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"log"
+	"os/signal"
+	"syscall"
 
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/config"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/postgres"
@@ -18,6 +20,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	db, err := postgres.Open(context.Background(), cfg.Database.DSN)
 	if err != nil {
@@ -43,7 +48,8 @@ func main() {
 	newRelay := relay.NewRelay(outboxStore, jobPublisher)
 
 	log.Println("Relay started")
-	if err := newRelay.Run(context.Background()); err != nil {
+	if err := newRelay.Run(ctx); err != nil {
 		log.Fatal(err)
 	}
+	log.Println("Relay stopped")
 }

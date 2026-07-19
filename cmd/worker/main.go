@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/application"
@@ -22,6 +25,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	db, err := postgres.Open(context.Background(), cfg.Database.DSN)
 	if err != nil {
@@ -77,8 +83,11 @@ func main() {
 		log.Fatalf("Job queue setup failed, %v", err)
 	}
 
-	err = jobQueue.Run(context.Background())
-	if err != nil {
+	// A cancelled context is the expected shutdown signal, not a failure, so
+	// only a different error is fatal.
+	err = jobQueue.Run(ctx)
+	if err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("job queue execution ended: %v", err)
 	}
+	log.Println("worker stopped")
 }
