@@ -35,10 +35,13 @@ func (p *fakePublisher) Publish(ctx context.Context, messageID string, payload j
 }
 
 type fakeOutboxSource struct {
-	rows       []postgres.OutboxRow
-	fetchErr   error
-	marked     []int64
-	markErrFor map[int64]error
+	rows         []postgres.OutboxRow
+	fetchErr     error
+	marked       []int64
+	markErrFor   map[int64]error
+	pruneCutoff  time.Time
+	pruneDeleted int64
+	pruneErr     error
 }
 
 func (s *fakeOutboxSource) FetchUnpublished(ctx context.Context, limit int) ([]postgres.OutboxRow, error) {
@@ -57,6 +60,11 @@ func (s *fakeOutboxSource) MarkPublished(ctx context.Context, id int64) error {
 	}
 	s.marked = append(s.marked, id)
 	return nil
+}
+
+func (s *fakeOutboxSource) DeletePublishedBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	s.pruneCutoff = cutoff
+	return s.pruneDeleted, s.pruneErr
 }
 
 func row(id int64) postgres.OutboxRow {
@@ -167,6 +175,34 @@ func TestRelay_publishPending(t *testing.T) {
 		if len(pub.calls) != 0 || len(source.marked) != 0 {
 			t.Errorf("expected no work on empty batch")
 		}
+	})
+}
+
+func TestRelay_prune(t *testing.T) {
+	t.Run("deletes with a cutoff one retention window before now", func(t *testing.T) {
+		source := &fakeOutboxSource{pruneDeleted: 5}
+		r := NewRelay(source, &fakePublisher{})
+
+		// prune calls time.Now() internally, so bound the expected cutoff between
+		// the moment before and after the call, each shifted back by the retention
+		// window. This asserts the retention math without a flaky fixed tolerance.
+		before := time.Now()
+		r.prune(context.Background())
+		after := time.Now()
+
+		if source.pruneCutoff.Before(before.Add(-r.retention)) {
+			t.Errorf("cutoff %s is older than before-retention %s", source.pruneCutoff, before.Add(-r.retention))
+		}
+		if source.pruneCutoff.After(after.Add(-r.retention)) {
+			t.Errorf("cutoff %s is newer than after-retention %s", source.pruneCutoff, after.Add(-r.retention))
+		}
+	})
+
+	t.Run("delete error is tolerated and does not panic", func(t *testing.T) {
+		source := &fakeOutboxSource{pruneErr: errors.New("db down")}
+		r := NewRelay(source, &fakePublisher{})
+
+		r.prune(context.Background()) // must simply log and return
 	})
 }
 

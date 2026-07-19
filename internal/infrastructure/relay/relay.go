@@ -13,6 +13,7 @@ import (
 type OutboxSource interface {
 	FetchUnpublished(ctx context.Context, limit int) ([]postgres.OutboxRow, error)
 	MarkPublished(ctx context.Context, id int64) error
+	DeletePublishedBefore(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
 type Publisher interface {
@@ -20,34 +21,44 @@ type Publisher interface {
 }
 
 const (
-	defaultInterval  = 1 * time.Second
-	defaultBatchSize = 10
+	defaultPublishInterval = 1 * time.Second
+	defaultPruneInterval   = 1 * time.Hour
+	defaultRetention       = 24 * time.Hour
+	defaultBatchSize       = 10
 )
 
 type Relay struct {
-	outboxSource OutboxSource
-	publisher    Publisher
-	interval     time.Duration
-	batchSize    int
+	outboxSource    OutboxSource
+	publisher       Publisher
+	publishInterval time.Duration
+	pruneInterval   time.Duration
+	retention       time.Duration
+	batchSize       int
 }
 
 func NewRelay(outboxSource OutboxSource, publisher Publisher) Relay {
 	return Relay{
-		outboxSource: outboxSource,
-		publisher:    publisher,
-		interval:     defaultInterval,
-		batchSize:    defaultBatchSize,
+		outboxSource:    outboxSource,
+		publisher:       publisher,
+		publishInterval: defaultPublishInterval,
+		pruneInterval:   defaultPruneInterval,
+		retention:       defaultRetention,
+		batchSize:       defaultBatchSize,
 	}
 }
 
 func (r Relay) Run(ctx context.Context) error {
-	ticker := time.NewTicker(r.interval)
-	defer ticker.Stop()
+	publishTicker := time.NewTicker(r.publishInterval)
+	defer publishTicker.Stop()
+	pruneTicker := time.NewTicker(r.pruneInterval)
+	defer pruneTicker.Stop()
 
 	for {
 		select {
-		case <-ticker.C:
+		case <-publishTicker.C:
 			r.publishPending(ctx)
+		case <-pruneTicker.C:
+			r.prune(ctx)
 		case <-ctx.Done():
 			return nil
 		}
@@ -71,5 +82,17 @@ func (r Relay) publishPending(ctx context.Context) {
 		if err := r.outboxSource.MarkPublished(ctx, row.ID); err != nil {
 			log.Printf("relay: mark event %d published: %v", row.ID, err)
 		}
+	}
+}
+
+func (r Relay) prune(ctx context.Context) {
+	cutoff := time.Now().Add(-r.retention)
+	deleted, err := r.outboxSource.DeletePublishedBefore(ctx, cutoff)
+	if err != nil {
+		log.Printf("relay: prune published events: %v", err)
+		return
+	}
+	if deleted > 0 {
+		log.Printf("relay: pruned %d published events", deleted)
 	}
 }
