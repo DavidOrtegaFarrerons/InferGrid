@@ -10,6 +10,7 @@ import (
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/postgres"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/rabbitmq"
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/relay"
+	"github.com/DavidOrtegaFarrerons/infergrid/internal/observability"
 	amqp "github.com/rabbitmq/amqp091-go"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -45,7 +46,8 @@ func main() {
 	}
 
 	outboxStore := postgres.NewOutboxStore(db)
-	newRelay := relay.NewRelay(outboxStore, jobPublisher)
+	logger := observability.NewLogger("relay", cfg.Logger.LogLevel)
+	newRelay := relay.NewRelay(outboxStore, jobPublisher, logger)
 
 	log.Println("Relay started")
 	if err := newRelay.Run(ctx); err != nil {
