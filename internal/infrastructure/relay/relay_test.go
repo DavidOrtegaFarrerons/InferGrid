@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/DavidOrtegaFarrerons/infergrid/internal/infrastructure/postgres"
 )
+
+// testLogger keeps relay log output out of test results.
+var testLogger = slog.New(slog.DiscardHandler)
 
 type publishCall struct {
 	messageID string
@@ -79,7 +83,7 @@ func TestRelay_publishPending(t *testing.T) {
 	t.Run("publishes every row in order and marks each published", func(t *testing.T) {
 		source := &fakeOutboxSource{rows: []postgres.OutboxRow{row(1), row(2), row(3)}}
 		pub := &fakePublisher{}
-		r := NewRelay(source, pub)
+		r := NewRelay(source, pub, testLogger)
 
 		r.publishPending(context.Background())
 
@@ -100,7 +104,7 @@ func TestRelay_publishPending(t *testing.T) {
 	t.Run("message id is the outbox row id, not the job id", func(t *testing.T) {
 		source := &fakeOutboxSource{rows: []postgres.OutboxRow{row(42)}}
 		pub := &fakePublisher{}
-		r := NewRelay(source, pub)
+		r := NewRelay(source, pub, testLogger)
 
 		r.publishPending(context.Background())
 
@@ -112,7 +116,7 @@ func TestRelay_publishPending(t *testing.T) {
 	t.Run("publish failure aborts the batch and leaves the row unmarked", func(t *testing.T) {
 		source := &fakeOutboxSource{rows: []postgres.OutboxRow{row(1), row(2), row(3)}}
 		pub := &fakePublisher{failAt: 2} // second publish fails
-		r := NewRelay(source, pub)
+		r := NewRelay(source, pub, testLogger)
 
 		r.publishPending(context.Background())
 
@@ -133,7 +137,7 @@ func TestRelay_publishPending(t *testing.T) {
 	t.Run("fetch error publishes and marks nothing", func(t *testing.T) {
 		source := &fakeOutboxSource{fetchErr: errors.New("db down")}
 		pub := &fakePublisher{}
-		r := NewRelay(source, pub)
+		r := NewRelay(source, pub, testLogger)
 
 		r.publishPending(context.Background())
 
@@ -151,7 +155,7 @@ func TestRelay_publishPending(t *testing.T) {
 			markErrFor: map[int64]error{1: errors.New("mark failed")},
 		}
 		pub := &fakePublisher{}
-		r := NewRelay(source, pub)
+		r := NewRelay(source, pub, testLogger)
 
 		r.publishPending(context.Background())
 
@@ -168,7 +172,7 @@ func TestRelay_publishPending(t *testing.T) {
 	t.Run("empty batch is a no-op", func(t *testing.T) {
 		source := &fakeOutboxSource{}
 		pub := &fakePublisher{}
-		r := NewRelay(source, pub)
+		r := NewRelay(source, pub, testLogger)
 
 		r.publishPending(context.Background())
 
@@ -181,7 +185,7 @@ func TestRelay_publishPending(t *testing.T) {
 func TestRelay_prune(t *testing.T) {
 	t.Run("deletes with a cutoff one retention window before now", func(t *testing.T) {
 		source := &fakeOutboxSource{pruneDeleted: 5}
-		r := NewRelay(source, &fakePublisher{})
+		r := NewRelay(source, &fakePublisher{}, testLogger)
 
 		// prune calls time.Now() internally, so bound the expected cutoff between
 		// the moment before and after the call, each shifted back by the retention
@@ -200,7 +204,7 @@ func TestRelay_prune(t *testing.T) {
 
 	t.Run("delete error is tolerated and does not panic", func(t *testing.T) {
 		source := &fakeOutboxSource{pruneErr: errors.New("db down")}
-		r := NewRelay(source, &fakePublisher{})
+		r := NewRelay(source, &fakePublisher{}, testLogger)
 
 		r.prune(context.Background()) // must simply log and return
 	})
@@ -209,7 +213,7 @@ func TestRelay_prune(t *testing.T) {
 func TestRelay_Run_stopsOnContextCancel(t *testing.T) {
 	source := &fakeOutboxSource{}
 	pub := &fakePublisher{}
-	r := NewRelay(source, pub)
+	r := NewRelay(source, pub, testLogger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // already cancelled: Run must return without blocking

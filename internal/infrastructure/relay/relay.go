@@ -3,7 +3,7 @@ package relay
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -30,16 +30,18 @@ const (
 type Relay struct {
 	outboxSource    OutboxSource
 	publisher       Publisher
+	logger          *slog.Logger
 	publishInterval time.Duration
 	pruneInterval   time.Duration
 	retention       time.Duration
 	batchSize       int
 }
 
-func NewRelay(outboxSource OutboxSource, publisher Publisher) Relay {
+func NewRelay(outboxSource OutboxSource, publisher Publisher, logger *slog.Logger) Relay {
 	return Relay{
 		outboxSource:    outboxSource,
 		publisher:       publisher,
+		logger:          logger,
 		publishInterval: defaultPublishInterval,
 		pruneInterval:   defaultPruneInterval,
 		retention:       defaultRetention,
@@ -68,20 +70,22 @@ func (r Relay) Run(ctx context.Context) error {
 func (r Relay) publishPending(ctx context.Context) {
 	rows, err := r.outboxSource.FetchUnpublished(ctx, r.batchSize)
 	if err != nil {
-		log.Printf("relay: fetch unpublished events: %v", err)
+		r.logger.Error("fetch unpublished events", "err", err)
 		return
 	}
 
 	for _, row := range rows {
 		id := strconv.FormatInt(row.ID, 10)
 		if err := r.publisher.Publish(ctx, id, row.Payload); err != nil {
-			log.Printf("relay: publish event %d: %v", row.ID, err)
+			r.logger.Error("publish event", "event_id", row.ID, "err", err)
 			return
 		}
 
 		if err := r.outboxSource.MarkPublished(ctx, row.ID); err != nil {
-			log.Printf("relay: mark event %d published: %v", row.ID, err)
+			r.logger.Warn("mark published event", "event_id", row.ID, "err", err)
 		}
+
+		r.logger.Debug("event published", "event_id", row.ID)
 	}
 }
 
@@ -89,10 +93,10 @@ func (r Relay) prune(ctx context.Context) {
 	cutoff := time.Now().Add(-r.retention)
 	deleted, err := r.outboxSource.DeletePublishedBefore(ctx, cutoff)
 	if err != nil {
-		log.Printf("relay: prune published events: %v", err)
+		r.logger.Error("prune published events", "err", err)
 		return
 	}
 	if deleted > 0 {
-		log.Printf("relay: pruned %d published events", deleted)
+		r.logger.Info("pruned published events", "deleted", deleted)
 	}
 }

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 )
 
@@ -37,10 +38,15 @@ type OpenAICompatibleConfig struct {
 	APIKey  string
 }
 
+type LoggerConfig struct {
+	LogLevel slog.Level
+}
+
 type APIConfig struct {
 	Database DatabaseConfig
 	RabbitMQ RabbitMQConfig
 	Server   GRPCServerConfig
+	Logger   LoggerConfig
 }
 
 type WorkerConfig struct {
@@ -50,6 +56,7 @@ type WorkerConfig struct {
 	Provider         InferenceProvider
 	Ollama           OllamaConfig
 	OpenAICompatible OpenAICompatibleConfig
+	Logger           LoggerConfig
 }
 
 type ClientConfig struct {
@@ -63,6 +70,27 @@ func requiredEnv(key string) (string, error) {
 	}
 
 	return envVar, nil
+}
+
+func loadLogger() (LoggerConfig, error) {
+	level, err := loadLogLevel()
+	if err != nil {
+		return LoggerConfig{}, err
+	}
+
+	return LoggerConfig{LogLevel: level}, nil
+}
+func loadLogLevel() (slog.Level, error) {
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "INFO"
+	}
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(logLevel)); err != nil {
+		return 0, fmt.Errorf("invalid LOG_LEVEL %q: %w", logLevel, err)
+	}
+
+	return level, nil
 }
 
 func loadDatabase() (DatabaseConfig, error) {
@@ -170,10 +198,16 @@ func LoadAPI() (APIConfig, error) {
 		return APIConfig{}, fmt.Errorf("loading server: %w", err)
 	}
 
+	logger, err := loadLogger()
+	if err != nil {
+		return APIConfig{}, fmt.Errorf("loading logger: %w", err)
+	}
+
 	return APIConfig{
 		Database: database,
 		RabbitMQ: rabbitMQ,
 		Server:   server,
+		Logger:   logger,
 	}, nil
 }
 
@@ -198,11 +232,17 @@ func LoadWorker() (WorkerConfig, error) {
 		return WorkerConfig{}, fmt.Errorf("loading inference provider: %w", err)
 	}
 
+	logger, err := loadLogger()
+	if err != nil {
+		return WorkerConfig{}, fmt.Errorf("loading logger: %w", err)
+	}
+
 	cfg := WorkerConfig{
 		Database: database,
 		RabbitMQ: rabbitMQ,
 		Server:   server,
 		Provider: provider,
+		Logger:   logger,
 	}
 
 	switch provider {
